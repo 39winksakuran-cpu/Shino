@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>でかける前チェック</title>
+<style>
+:root{
+  --bg:#fafaf8;--surface:#fff;--text:#222a30;--sub:#66727a;--line:#e3e6e8;
+  --accent:#2f6f8f;--accent-soft:#e6f1f6;--ok:#2e7d5b;--ok-soft:#e5f4ec;--danger:#b4443a;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#16191b;--surface:#1f2427;--text:#eef1f3;--sub:#9aa7ae;--line:#323a3f;
+    --accent:#7fc0de;--accent-soft:#223640;--ok:#6fcf9f;--ok-soft:#1e3328;--danger:#ef8b80;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16191b;--surface:#1f2427;--text:#eef1f3;--sub:#9aa7ae;--line:#323a3f;
+  --accent:#7fc0de;--accent-soft:#223640;--ok:#6fcf9f;--ok-soft:#1e3328;--danger:#ef8b80;
+}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif;font-size:18px;line-height:1.6}
+main{max-width:560px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:22px;margin:0 0 16px}
+h2{font-size:18px;margin:0}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.scenes{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.scene{min-height:56px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-weight:600}
+.scene[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .scene[aria-pressed="true"]{color:#10242d}}
+.head{display:flex;justify-content:space-between;align-items:center;margin:24px 0 8px}
+.count{color:var(--sub);font-size:16px}
+.status{margin:0 0 12px;padding:14px;border-radius:12px;background:var(--accent-soft);text-align:center;font-weight:700}
+.status.done{background:var(--ok-soft);color:var(--ok);font-size:22px}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+li{display:flex;gap:8px}
+.item{flex:1;display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;text-align:left;
+  border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.box{flex:none;width:26px;height:26px;border:2px solid var(--sub);border-radius:7px;display:grid;place-items:center;font-size:18px;line-height:1;color:#fff}
+.item[aria-pressed="true"]{background:var(--ok-soft);border-color:var(--ok)}
+.item[aria-pressed="true"] .box{background:var(--ok);border-color:var(--ok)}
+.item[aria-pressed="true"] .label{text-decoration:line-through;color:var(--sub)}
+.del{flex:none;width:56px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--danger);font-size:16px}
+.add{display:flex;gap:8px;margin-top:16px}
+.add input{flex:1;min-width:0;min-height:56px;padding:0 14px;font:inherit;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text)}
+.add button{min-width:84px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-weight:700}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .add button{color:#10242d}}
+.reset{margin-top:16px;width:100%;min-height:48px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--sub)}
+.empty{color:var(--sub);text-align:center;padding:24px 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>でかける前チェック</h1>
+  <div class="scenes" id="scenes" role="group" aria-label="場面"></div>
+  <section id="list" hidden>
+    <div class="head"><h2 id="title"></h2><span class="count" id="count"></span></div>
+    <p class="status" id="status" aria-live="polite"></p>
+    <ul id="items"></ul>
+    <form class="add" id="addForm" onsubmit="return false">
+      <input id="newItem" type="text" placeholder="持ち物を追加" maxlength="30" aria-label="持ち物を追加">
+      <button type="button" id="addBtn">追加</button>
+    </form>
+    <button class="reset" id="reset">チェックをリセット</button>
+  </section>
+</main>
+<script>
+const DEFAULTS={
+  "仕事":["財布","スマホ","充電器","社員証","鍵","ハンカチ","筆記用具","PC"],
+  "ジム":["ジムの会員証","タオル","着替え","シューズ","水筒","スマホ","イヤホン","財布"],
+  "旅行":["財布","スマホ","充電器","パスポート・身分証","チケット","着替え","洗面用具","常備薬","鍵"],
+  "買い物":["財布","エコバッグ","スマホ","ポイントカード","買い物メモ","鍵"]
+};
+const KEY="dekakeru-check-v1";
+let store={custom:{},removed:{}};
+try{const s=localStorage.getItem(KEY);if(s)store=Object.assign(store,JSON.parse(s))}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}}
+
+let scene=null;let checked=new Set();
+const $=id=>document.getElementById(id);
+
+function itemsOf(s){
+  const rem=store.removed[s]||[];
+  return DEFAULTS[s].filter(x=>!rem.includes(x)).concat(store.custom[s]||[]);
+}
+function renderScenes(){
+  $("scenes").innerHTML="";
+  Object.keys(DEFAULTS).forEach(s=>{
+    const b=document.createElement("button");
+    b.className="scene";b.textContent=s;
+    b.setAttribute("aria-pressed",String(s===scene));
+    b.onclick=()=>{scene=s;checked=new Set();render()};
+    $("scenes").appendChild(b);
+  });
+}
+function render(){
+  renderScenes();
+  if(!scene){$("list").hidden=true;return}
+  $("list").hidden=false;
+  const items=itemsOf(scene);
+  $("title").textContent=scene+"の持ち物";
+  const n=items.filter(x=>checked.has(x)).length;
+  $("count").textContent=n+" / "+items.length;
+  const all=items.length>0&&n===items.length;
+  const st=$("status");
+  st.className="status"+(all?" done":"");
+  st.textContent=all?"忘れ物ゼロ！":items.length?"あと "+(items.length-n)+" 個":"持ち物がありません";
+  const ul=$("items");ul.innerHTML="";
+  items.forEach(name=>{
+    const li=document.createElement("li");
+    const b=document.createElement("button");
+    b.className="item";b.setAttribute("aria-pressed",String(checked.has(name)));
+    b.innerHTML='<span class="box">'+(checked.has(name)?"✓":"")+'</span><span class="label"></span>';
+    b.querySelector(".label").textContent=name;
+    b.onclick=()=>{checked.has(name)?checked.delete(name):checked.add(name);render()};
+    const d=document.createElement("button");
+    d.className="del";d.textContent="削除";d.setAttribute("aria-label",name+"を削除");
+    d.onclick=()=>removeItem(name);
+    li.append(b,d);ul.appendChild(li);
+  });
+}
+function addItem(){
+  const v=$("newItem").value.trim();
+  if(!v||!scene||itemsOf(scene).includes(v))return;
+  (store.custom[scene]=store.custom[scene]||[]).push(v);
+  const r=store.removed[scene];if(r)store.removed[scene]=r.filter(x=>x!==v);
+  save();$("newItem").value="";render();
+}
+function removeItem(name){
+  checked.delete(name);
+  const c=store.custom[scene]||[];
+  if(c.includes(name))store.custom[scene]=c.filter(x=>x!==name);
+  else(store.removed[scene]=store.removed[scene]||[]).push(name);
+  save();render();
+}
+$("addBtn").onclick=addItem;
+$("newItem").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addItem()}});
+$("reset").onclick=()=>{checked=new Set();render()};
+render();
+</script>
+</body>
+</html>
